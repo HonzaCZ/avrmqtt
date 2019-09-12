@@ -15,7 +15,6 @@ import (
 var logLock sync.Mutex
 var conf = struct {
 	AVRHost       string `flag:"avr-host" default:"avr" description:"denon avr host name"`
-	AVRHTTPPort   string `flag:"avr-http-port" env:"AVR_HTTP_PORT" default:"80" description:"denon avr telnet port"`
 	AVRTelnetPort string `flag:"avr-telnet-port" default:"23" description:"denon avr telnet port"`
 
 	MQTTBroker   string `flag:"mqtt-broker" description:"mqtt host name"`
@@ -43,7 +42,6 @@ func main() {
 
 	avrOpts := &avr.Options{
 		Host:       conf.AVRHost,
-		HttpPort:   conf.AVRHTTPPort,
 		TelnetPort: conf.AVRTelnetPort,
 	}
 

@@ -3,8 +3,6 @@ package avr
 import (
 	"fmt"
 	"net"
-	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -15,10 +13,6 @@ import (
 	"github.com/ziutek/telnet"
 )
 
-const (
-	urlAppDirekt = "/goform/formiPhoneAppDirect.xml"
-)
-
 type Event struct {
 	Data string
 }
@@ -26,7 +20,6 @@ type Event struct {
 type AVR struct {
 	m      sync.Mutex
 	opts   *Options
-	http   *http.Client
 	telnet *telnet.Conn
 	Events chan *Event
 	state  map[string]string
@@ -35,18 +28,14 @@ type AVR struct {
 
 type Options struct {
 	Host         string
-	HttpPort     string
 	TelnetPort   string
-	httpEndpoint string
 	telnetHost   string
 }
 
 func New(opts *Options) *AVR {
-	opts.httpEndpoint = fmt.Sprintf("http://%s:%s%s", opts.Host, opts.HttpPort, urlAppDirekt)
 	opts.telnetHost = fmt.Sprintf("%s:%s", opts.Host, opts.TelnetPort)
 	avr := &AVR{
 		opts:   opts,
-		http:   http.DefaultClient,
 		Events: make(chan *Event),
 		state:  make(map[string]string),
 	}
@@ -59,7 +48,6 @@ func New(opts *Options) *AVR {
 func (a *AVR) logFields() map[string]interface{} {
 	return map[string]interface{}{
 		"module": "avr",
-		"http":   a.opts.httpEndpoint,
 		"telnet": a.opts.telnetHost,
 	}
 }
@@ -120,8 +108,8 @@ func (a *AVR) Command(endpoint, payload string) error {
 	} else {
 		cmd = endpoint + payload
 	}
-	a.logger.WithField("cmd", cmd).Debug("send http command")
-	err := get(a.http, a.opts.httpEndpoint, cmd)
+	a.logger.WithField("cmd", cmd).Debug("send telnet command")
+	err := a.sendTelnet(cmd)
 	if err != nil {
 		lf := a.logFields()
 		lf["cmd"] = cmd
@@ -132,15 +120,14 @@ func (a *AVR) Command(endpoint, payload string) error {
 	return nil
 }
 
-func get(client *http.Client, endpoint string, cmd string) error {
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return errors.Annotate(err, "failed to create request")
+func (a *AVR) sendTelnet(cmd string) error {
+	var err error
+	if a.telnet == nil {
+		a.telnet, err = telnet.DialTimeout("tcp", a.opts.telnetHost, 5*time.Second)
+		if err != nil {
+			return errors.Annotate(err, "failed to connect to telnet")
+		}
 	}
-
-	// add the command as empty parameter
-	req.URL.RawQuery = url.QueryEscape(cmd)
-	_, err = client.Do(req)
-	err = logerr.WithField(err, "url", req.URL.String())
-	return errors.Annotate(err, "failed to do request")
+	_, err = a.telnet.Write([]byte(cmd))
+	return errors.Annotate(err, "failed to do telnet request")
 }
