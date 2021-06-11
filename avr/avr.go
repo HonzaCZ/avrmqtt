@@ -3,18 +3,12 @@ package avr
 import (
 	"fmt"
 	"net"
-	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/telnet"
-)
-
-const (
-	urlAppDirekt = "/goform/formiPhoneAppDirect.xml"
 )
 
 type Event struct {
@@ -24,7 +18,6 @@ type Event struct {
 type AVR struct {
 	m      sync.Mutex
 	opts   *Options
-	http   *http.Client
 	telnet *telnet.Conn
 	Events chan *Event
 	state  map[string]string
@@ -33,19 +26,15 @@ type AVR struct {
 
 type Options struct {
 	Host              string
-	HttpPort          string
 	TelnetPort        string
 	TelnetCmdInterval int
-	httpEndpoint      string
 	telnetHost        string
 }
 
 func New(opts *Options) *AVR {
-	opts.httpEndpoint = fmt.Sprintf("http://%s:%s%s", opts.Host, opts.HttpPort, urlAppDirekt)
 	opts.telnetHost = fmt.Sprintf("%s:%s", opts.Host, opts.TelnetPort)
 	avr := &AVR{
 		opts:   opts,
-		http:   http.DefaultClient,
 		Events: make(chan *Event),
 		state:  make(map[string]string),
 	}
@@ -58,7 +47,6 @@ func New(opts *Options) *AVR {
 func (a *AVR) logFields() map[string]interface{} {
 	return map[string]interface{}{
 		"module": "avr",
-		"http":   a.opts.httpEndpoint,
 		"telnet": a.opts.telnetHost,
 	}
 }
@@ -118,8 +106,8 @@ func (a *AVR) Command(endpoint, payload string) error {
 	} else {
 		cmd = endpoint + payload
 	}
-	a.logger.WithField("cmd", cmd).Debug("send http command")
-	err := get(a.http, a.opts.httpEndpoint, cmd)
+	a.logger.WithField("cmd", cmd).Debug("send telnet command")
+	err := a.sendTelnet(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to send cmd %q: %w", cmd, err)
 	}
@@ -128,17 +116,19 @@ func (a *AVR) Command(endpoint, payload string) error {
 	return nil
 }
 
-func get(client *http.Client, endpoint string, cmd string) error {
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request to %q: %w", endpoint, err)
+func (a *AVR) sendTelnet(cmd string) error {
+	var err error
+	if a.telnet == nil {
+		a.telnet, err = telnet.DialTimeout("tcp", a.opts.telnetHost, 5*time.Second)
+		if err != nil {
+			return fmt.Errorf("failed to connect to telnet: %w", err)
+		}
 	}
 
-	// add the command as empty parameter
-	req.URL.RawQuery = url.QueryEscape(cmd)
-	_, err = client.Do(req)
+	_, err = a.telnet.Write([]byte(cmd))
+
 	if err != nil {
-		return fmt.Errorf("failed to do request %q: %w", req.URL.String(), err)
+		return fmt.Errorf("failed to do telnet request: %w", err)
 	}
 	return nil
 }
