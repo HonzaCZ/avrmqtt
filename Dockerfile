@@ -14,7 +14,7 @@ adduser \
     --home "/nonexistent" \    
     --shell "/sbin/nologin" \    
     --no-create-home \
-    --uid 1000 \
+    --uid 1001 \
     avrmqtt;
 
 FROM scratch
